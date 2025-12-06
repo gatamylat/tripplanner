@@ -22,6 +22,12 @@
     
     <title>Trip Planner</title>
     
+    <!-- Telegram Web App SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌐</text></svg>">
+    
     <style>
         /* === БАЗОВЫЕ СТИЛИ (Apple HIG inspired) === */
         * {
@@ -733,6 +739,24 @@
         .toast.success { background: var(--success); }
         .toast.error { background: var(--danger); }
         
+        /* === PHOTO PICKER === */
+        .photo-picker {
+            width: 100%;
+            height: 120px;
+            border-radius: 12px;
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: 2px dashed var(--border);
+            overflow: hidden;
+        }
+        
+        .photo-picker:active {
+            opacity: 0.7;
+        }
+        
         /* === УТИЛИТЫ === */
         .hidden { display: none !important; }
         .mb-8 { margin-bottom: 8px; }
@@ -916,6 +940,9 @@ class TripPlannerApp {
     async init() {
         console.log('🧳 Trip Planner: Инициализация...');
         
+        // Telegram Web App
+        this.initTelegram();
+        
         await this.initDatabase();
         this.renderTrips();
         this.registerServiceWorker();
@@ -933,6 +960,130 @@ class TripPlannerApp {
         });
         
         console.log('✅ Trip Planner готов!');
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // TELEGRAM INTEGRATION
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    initTelegram() {
+        // Проверяем, открыто ли в Telegram
+        if (!window.Telegram?.WebApp) {
+            console.log('📱 Открыто вне Telegram (браузер)');
+            this.telegramUser = null;
+            return;
+        }
+        
+        const tg = window.Telegram.WebApp;
+        
+        // Сообщаем Telegram что приложение готово
+        tg.ready();
+        
+        // Раскрываем на весь экран
+        tg.expand();
+        
+        // Получаем данные пользователя
+        const user = tg.initDataUnsafe?.user;
+        
+        if (user) {
+            this.telegramUser = {
+                id: user.id,
+                firstName: user.first_name,
+                lastName: user.last_name || '',
+                username: user.username || null
+            };
+            
+            console.log('👤 Telegram пользователь:', this.telegramUser);
+            
+            // Логируем в Google Sheets
+            this.logToGoogleSheets('open', this.telegramUser);
+            
+            // Проверяем белый список (опционально)
+            // this.checkWhitelist();
+        } else {
+            console.log('📱 Telegram: пользователь не определён');
+            this.telegramUser = null;
+        }
+        
+        // Применяем тему Telegram
+        this.applyTelegramTheme(tg.colorScheme);
+    }
+    
+    applyTelegramTheme(colorScheme) {
+        if (colorScheme === 'dark') {
+            document.documentElement.style.setProperty('--bg', '#1c1c1e');
+            document.documentElement.style.setProperty('--card', '#2c2c2e');
+            document.documentElement.style.setProperty('--text', '#ffffff');
+            document.documentElement.style.setProperty('--text-secondary', '#8e8e93');
+            document.documentElement.style.setProperty('--border', '#3a3a3c');
+        }
+    }
+    
+    // Белый список (раскомментируй и заполни ID)
+    checkWhitelist() {
+        const ALLOWED_USERS = [
+            // Впиши сюда Telegram ID участников:
+            // 123456789,
+            // 987654321,
+        ];
+        
+        if (ALLOWED_USERS.length === 0) return; // Список пустой — доступ всем
+        
+        if (!this.telegramUser || !ALLOWED_USERS.includes(this.telegramUser.id)) {
+            document.body.innerHTML = `
+                <div style="
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100vh;
+                    padding: 40px;
+                    text-align: center;
+                    background: var(--bg);
+                    color: var(--text);
+                ">
+                    <div style="font-size: 64px; margin-bottom: 20px;">⛔</div>
+                    <h2 style="margin-bottom: 12px;">Доступ закрыт</h2>
+                    <p style="color: var(--text-secondary);">Это приватное приложение для участников поездки</p>
+                    ${this.telegramUser ? `<p style="margin-top: 20px; font-size: 12px; opacity: 0.5;">Ваш ID: ${this.telegramUser.id}</p>` : ''}
+                </div>
+            `;
+            throw new Error('Access denied');
+        }
+    }
+    
+    // Логирование в Google Sheets
+    // ⚠️ ЗАМЕНИ URL на свой (см. инструкцию ниже)
+    async logToGoogleSheets(action, user) {
+        const GOOGLE_SCRIPT_URL = ''; // https://script.google.com/macros/s/AKfycbwztM1VsOlO4qY81-1Fi-w77D9hzSVVKSMeABojiIMs-Y9vXa04gZFevTnV0XmXZhE/exec
+        
+        if (!GOOGLE_SCRIPT_URL) {
+            console.log('📊 Google Sheets: URL не настроен');
+            return;
+        }
+        
+        try {
+            const data = {
+                timestamp: new Date().toISOString(),
+                action: action,
+                userId: user?.id || 'unknown',
+                firstName: user?.firstName || '',
+                lastName: user?.lastName || '',
+                username: user?.username || ''
+            };
+            
+            // Отправляем данные
+            fetch(GOOGLE_SCRIPT_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            
+            console.log('📊 Лог отправлен в Google Sheets');
+        } catch (error) {
+            console.log('📊 Ошибка логирования:', error);
+        }
     }
     
     // ═══════════════════════════════════════════════════════════════════════
@@ -1390,7 +1541,8 @@ class TripPlannerApp {
                 items.push({ label: 'Добавить событие', icon: '📅', action: 'App.showAddEventModal()' });
                 break;
             case 'links':
-                items.push({ label: 'Карта (Google Maps)', icon: '🗺️', action: 'App.showAddLinkModal("map")' });
+                items.push({ label: 'Google Maps', icon: '🗺️', action: 'App.showAddLinkModal("map")' });
+                items.push({ label: 'Яндекс Карты', icon: '📍', action: 'App.showAddLinkModal("yandex")' });
                 items.push({ label: 'Instagram', icon: '📸', action: 'App.showAddLinkModal("instagram")' });
                 items.push({ label: 'Сайт', icon: '🌐', action: 'App.showAddLinkModal("web")' });
                 break;
@@ -1402,7 +1554,8 @@ class TripPlannerApp {
                 break;
         }
         
-        items.push({ label: 'Экспорт поездки', icon: '📤', action: 'App.exportTrip()' });
+        items.push({ label: 'Экспорт в HTML', icon: '🌐', action: 'App.exportTripHTML()' });
+        items.push({ label: 'Экспорт JSON', icon: '📤', action: 'App.exportTrip()' });
         
         this.updateFabMenu(items);
         this.showFab();
@@ -1456,7 +1609,11 @@ class TripPlannerApp {
                         <div class="event-item" onclick="App.showEventDetail('${e.id}')">
                             <span class="event-time">${e.time}</span>
                             <div class="event-content">
-                                <div class="event-title">${e.title}</div>
+                                <div class="event-title">
+                                    ${e.title}
+                                    ${e.link ? '<span style="margin-left: 6px; opacity: 0.6;">🔗</span>' : ''}
+                                    ${e.photo ? '<span style="margin-left: 4px; opacity: 0.6;">📷</span>' : ''}
+                                </div>
                                 ${e.note ? `<div class="event-note">${e.note}</div>` : ''}
                             </div>
                         </div>
@@ -1495,9 +1652,39 @@ class TripPlannerApp {
                     <textarea class="input" id="eventNote" placeholder="Дополнительная информация..."></textarea>
                 </div>
                 
+                <div class="form-group">
+                    <label class="form-label">Ссылка (опционально)</label>
+                    <input type="url" class="input" id="eventLink" placeholder="https://maps.google.com/... или yandex.ru/maps/...">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Фото (опционально)</label>
+                    <div class="photo-picker" id="eventPhotoPicker" onclick="App.pickEventPhoto()">
+                        <span style="font-size: 24px; color: var(--text-tertiary);">📷 Добавить фото</span>
+                    </div>
+                    <input type="hidden" id="eventPhoto">
+                </div>
+                
                 <button class="btn btn-primary" onclick="App.saveEvent()">Добавить</button>
             `
         });
+    }
+    
+    pickEventPhoto() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const base64 = await this.fileToBase64(file);
+            document.getElementById('eventPhoto').value = base64;
+            document.getElementById('eventPhotoPicker').innerHTML = `
+                <img src="${base64}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 10px;">
+            `;
+        };
+        input.click();
     }
     
     async saveEvent() {
@@ -1505,6 +1692,8 @@ class TripPlannerApp {
         const time = document.getElementById('eventTime').value;
         const title = document.getElementById('eventTitle').value.trim();
         const note = document.getElementById('eventNote').value.trim();
+        const link = document.getElementById('eventLink').value.trim();
+        const photo = document.getElementById('eventPhoto').value;
         
         if (!date || !time || !title) {
             this.showToast('Заполните обязательные поля', 'error');
@@ -1517,7 +1706,9 @@ class TripPlannerApp {
             date,
             time,
             title,
-            note
+            note,
+            link: link || null,
+            photo: photo || null
         };
         
         await this.dbSave('events', event);
@@ -1530,18 +1721,132 @@ class TripPlannerApp {
         const event = await this.dbGet('events', eventId);
         if (!event) return;
         
+        let photoHtml = '';
+        if (event.photo) {
+            photoHtml = `<img src="${event.photo}" style="width: 100%; border-radius: 12px; margin-bottom: 16px;">`;
+        }
+        
+        let linkHtml = '';
+        if (event.link) {
+            const linkIcon = event.link.includes('yandex') ? '📍' : (event.link.includes('google') || event.link.includes('goo.gl')) ? '🗺️' : '🔗';
+            linkHtml = `
+                <a href="${event.link}" target="_blank" class="btn btn-secondary mb-16" style="text-decoration: none;">
+                    ${linkIcon} Открыть ссылку
+                </a>
+            `;
+        }
+        
         this.showModal({
             title: event.title,
             body: `
+                ${photoHtml}
+                
                 <div class="description-block">
                     <p><strong>Дата:</strong> ${this.formatDate(event.date)}</p>
                     <p><strong>Время:</strong> ${event.time}</p>
                     ${event.note ? `<p style="margin-top: 12px">${event.note}</p>` : ''}
                 </div>
                 
+                ${linkHtml}
+                
+                <button class="btn btn-secondary mb-16" onclick="App.showEditEventModal('${eventId}')">✏️ Редактировать</button>
+                
                 <button class="btn btn-danger" onclick="App.deleteEvent('${eventId}')">Удалить событие</button>
             `
         });
+    }
+    
+    async showEditEventModal(eventId) {
+        const event = await this.dbGet('events', eventId);
+        if (!event) return;
+        
+        this.showModal({
+            title: 'Редактировать событие',
+            body: `
+                <input type="hidden" id="editEventId" value="${eventId}">
+                
+                <div class="form-group">
+                    <label class="form-label">Дата</label>
+                    <input type="date" class="input" id="editEventDate" 
+                        min="${this.currentTrip.startDate}" 
+                        max="${this.currentTrip.endDate}"
+                        value="${event.date}">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Время</label>
+                    <input type="time" class="input" id="editEventTime" value="${event.time}">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Название</label>
+                    <input type="text" class="input" id="editEventTitle" value="${event.title}">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Заметка</label>
+                    <textarea class="input" id="editEventNote">${event.note || ''}</textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Ссылка</label>
+                    <input type="url" class="input" id="editEventLink" value="${event.link || ''}" placeholder="https://...">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Фото</label>
+                    <div class="photo-picker" id="editEventPhotoPicker" onclick="App.pickEditEventPhoto()">
+                        ${event.photo 
+                            ? `<img src="${event.photo}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 10px;">`
+                            : `<span style="font-size: 24px; color: var(--text-tertiary);">📷 Добавить фото</span>`
+                        }
+                    </div>
+                    <input type="hidden" id="editEventPhoto" value="${event.photo || ''}">
+                </div>
+                
+                <button class="btn btn-primary" onclick="App.updateEvent()">Сохранить</button>
+            `
+        });
+    }
+    
+    pickEditEventPhoto() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const base64 = await this.fileToBase64(file);
+            document.getElementById('editEventPhoto').value = base64;
+            document.getElementById('editEventPhotoPicker').innerHTML = `
+                <img src="${base64}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 10px;">
+            `;
+        };
+        input.click();
+    }
+    
+    async updateEvent() {
+        const eventId = document.getElementById('editEventId').value;
+        const event = await this.dbGet('events', eventId);
+        if (!event) return;
+        
+        event.date = document.getElementById('editEventDate').value;
+        event.time = document.getElementById('editEventTime').value;
+        event.title = document.getElementById('editEventTitle').value.trim();
+        event.note = document.getElementById('editEventNote').value.trim();
+        event.link = document.getElementById('editEventLink').value.trim() || null;
+        event.photo = document.getElementById('editEventPhoto').value || null;
+        
+        if (!event.date || !event.time || !event.title) {
+            this.showToast('Заполните обязательные поля', 'error');
+            return;
+        }
+        
+        await this.dbSave('events', event);
+        this.closeModal();
+        this.showToast('✅ Событие обновлено', 'success');
+        this.renderTripDetail();
     }
     
     async deleteEvent(eventId) {
@@ -1570,14 +1875,20 @@ class TripPlannerApp {
         
         // Группировка по типу
         const maps = links.filter(l => l.type === 'map');
+        const yandex = links.filter(l => l.type === 'yandex');
         const instagrams = links.filter(l => l.type === 'instagram');
         const webs = links.filter(l => l.type === 'web');
         
         let html = '';
         
         if (maps.length > 0) {
-            html += `<div class="section-subheader">🗺️ Карты</div>`;
+            html += `<div class="section-subheader">🗺️ Google Maps</div>`;
             html += `<div class="list">${maps.map(l => this.renderLinkItem(l)).join('')}</div>`;
+        }
+        
+        if (yandex.length > 0) {
+            html += `<div class="section-subheader">📍 Яндекс Карты</div>`;
+            html += `<div class="list">${yandex.map(l => this.renderLinkItem(l)).join('')}</div>`;
         }
         
         if (instagrams.length > 0) {
@@ -1594,8 +1905,8 @@ class TripPlannerApp {
     }
     
     renderLinkItem(link) {
-        const icons = { map: '🗺️', instagram: '📸', web: '🌐' };
-        const iconClass = { map: 'map', instagram: 'instagram', web: 'web' };
+        const icons = { map: '🗺️', yandex: '📍', instagram: '📸', web: '🌐' };
+        const iconClass = { map: 'map', yandex: 'map', instagram: 'instagram', web: 'web' };
         
         return `
             <div class="list-item" onclick="App.openLink('${link.id}')">
@@ -1610,9 +1921,10 @@ class TripPlannerApp {
     }
     
     showAddLinkModal(type) {
-        const titles = { map: 'Карта', instagram: 'Instagram', web: 'Сайт' };
+        const titles = { map: 'Google Maps', yandex: 'Яндекс Карты', instagram: 'Instagram', web: 'Сайт' };
         const placeholders = {
             map: 'https://maps.google.com/...',
+            yandex: 'https://yandex.ru/maps/...',
             instagram: 'https://instagram.com/...',
             web: 'https://example.com'
         };
@@ -1886,7 +2198,14 @@ class TripPlannerApp {
                         <div class="list-item-icon" style="background: #e8f5e9">📤</div>
                         <div class="list-item-content">
                             <div class="list-item-title">Экспорт в JSON</div>
-                            <div class="list-item-subtitle">Поделиться с участниками</div>
+                            <div class="list-item-subtitle">Для импорта в приложение</div>
+                        </div>
+                    </div>
+                    <div class="list-item" onclick="App.exportTripHTML()">
+                        <div class="list-item-icon" style="background: #fff3e0">🌐</div>
+                        <div class="list-item-content">
+                            <div class="list-item-title">Экспорт в HTML</div>
+                            <div class="list-item-subtitle">Красивая страница для Telegram</div>
                         </div>
                     </div>
                     <div class="list-item" onclick="App.deleteTrip()">
@@ -1983,6 +2302,407 @@ class TripPlannerApp {
     // ЭКСПОРТ / ИМПОРТ
     // ═══════════════════════════════════════════════════════════════════════
     
+    async exportTripHTML() {
+        const trip = this.currentTrip;
+        const tripId = trip.id;
+        
+        const events = await this.dbGetAll('events', 'tripId', tripId);
+        const links = await this.dbGetAll('links', 'tripId', tripId);
+        const notes = await this.dbGetAll('notes', 'tripId', tripId);
+        const photos = await this.dbGetAll('photos', 'tripId', tripId);
+        
+        // Группировка событий по датам
+        const groupedEvents = {};
+        events.forEach(e => {
+            if (!groupedEvents[e.date]) groupedEvents[e.date] = [];
+            groupedEvents[e.date].push(e);
+        });
+        const sortedDates = Object.keys(groupedEvents).sort();
+        
+        // Группировка ссылок по типу
+        const linkTypes = { map: [], yandex: [], instagram: [], web: [] };
+        links.forEach(l => {
+            if (linkTypes[l.type]) linkTypes[l.type].push(l);
+        });
+        
+        // Генерация HTML
+        const html = `<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${trip.title}</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            padding-bottom: 40px;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 24px;
+            padding: 20px;
+        }
+        
+        .header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .header .dates {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+        
+        .cover-image {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 16px;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        
+        .section {
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        
+        .section-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .day-block {
+            margin-bottom: 20px;
+        }
+        
+        .day-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .day-badge {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+        
+        .day-badge .num { font-size: 20px; line-height: 1; }
+        .day-badge .month { font-size: 10px; text-transform: uppercase; }
+        
+        .day-info .weekday { font-size: 17px; font-weight: 600; }
+        .day-info .date { font-size: 13px; color: #8e8e93; }
+        
+        .event {
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f5;
+            display: flex;
+            gap: 12px;
+        }
+        
+        .event:last-child { border-bottom: none; }
+        
+        .event-time {
+            font-size: 14px;
+            font-weight: 600;
+            color: #667eea;
+            width: 50px;
+            flex-shrink: 0;
+        }
+        
+        .event-content { flex: 1; }
+        .event-title { font-size: 16px; font-weight: 500; }
+        .event-note { font-size: 14px; color: #8e8e93; margin-top: 4px; }
+        
+        .event-photo {
+            width: 100%;
+            border-radius: 12px;
+            margin-top: 12px;
+        }
+        
+        .event-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 8px;
+            padding: 8px 14px;
+            background: #f0f0f5;
+            border-radius: 20px;
+            color: #667eea;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .event-link:hover { background: #e5e5ea; }
+        
+        .link-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px;
+            background: #f8f8fc;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            text-decoration: none;
+            color: inherit;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .link-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .link-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        
+        .link-icon.map { background: #e8f5e9; }
+        .link-icon.yandex { background: #fff3e0; }
+        .link-icon.instagram { background: #fce4ec; }
+        .link-icon.web { background: #e3f2fd; }
+        
+        .link-info { flex: 1; }
+        .link-title { font-size: 16px; font-weight: 500; }
+        .link-url { font-size: 12px; color: #8e8e93; }
+        
+        .note-item {
+            padding: 16px;
+            background: #fefce8;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            border-left: 4px solid #fbbf24;
+        }
+        
+        .note-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+        .note-text { font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+        
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px;
+        }
+        
+        .photo-item {
+            aspect-ratio: 1;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+        
+        .subsection { margin-top: 16px; }
+        .subsection-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #8e8e93;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 10px;
+        }
+        
+        .footer {
+            text-align: center;
+            color: white;
+            opacity: 0.7;
+            font-size: 14px;
+            margin-top: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✈️ ${trip.title}</h1>
+            <div class="dates">${this.formatDateRange(trip.startDate, trip.endDate)}</div>
+        </div>
+        
+        ${trip.cover ? `<img src="${trip.cover}" class="cover-image" alt="${trip.title}">` : ''}
+        
+        ${trip.description ? `
+        <div class="section">
+            <div class="section-title">📋 О поездке</div>
+            <p style="line-height: 1.6;">${trip.description}</p>
+        </div>
+        ` : ''}
+        
+        ${sortedDates.length > 0 ? `
+        <div class="section">
+            <div class="section-title">📅 Расписание</div>
+            ${sortedDates.map(date => {
+                const d = new Date(date);
+                const dayEvents = groupedEvents[date].sort((a, b) => a.time.localeCompare(b.time));
+                return `
+                <div class="day-block">
+                    <div class="day-header">
+                        <div class="day-badge">
+                            <span class="num">${d.getDate()}</span>
+                            <span class="month">${this.getMonthShort(d.getMonth())}</span>
+                        </div>
+                        <div class="day-info">
+                            <div class="weekday">${this.getWeekday(d)}</div>
+                            <div class="date">${this.formatDate(date)}</div>
+                        </div>
+                    </div>
+                    ${dayEvents.map(e => `
+                    <div class="event">
+                        <span class="event-time">${e.time}</span>
+                        <div class="event-content">
+                            <div class="event-title">${e.title}</div>
+                            ${e.note ? `<div class="event-note">${e.note}</div>` : ''}
+                            ${e.link ? `<a href="${e.link}" target="_blank" class="event-link">🔗 Открыть ссылку</a>` : ''}
+                            ${e.photo ? `<img src="${e.photo}" class="event-photo" alt="${e.title}">` : ''}
+                        </div>
+                    </div>
+                    `).join('')}
+                </div>
+                `;
+            }).join('')}
+        </div>
+        ` : ''}
+        
+        ${links.length > 0 ? `
+        <div class="section">
+            <div class="section-title">🔗 Полезные ссылки</div>
+            
+            ${linkTypes.map.length > 0 ? `
+            <div class="subsection">
+                <div class="subsection-title">🗺️ Google Maps</div>
+                ${linkTypes.map.map(l => `
+                <a href="${l.url}" target="_blank" class="link-item">
+                    <div class="link-icon map">🗺️</div>
+                    <div class="link-info">
+                        <div class="link-title">${l.title}</div>
+                        <div class="link-url">${this.getDomain(l.url)}</div>
+                    </div>
+                </a>
+                `).join('')}
+            </div>
+            ` : ''}
+            
+            ${linkTypes.yandex.length > 0 ? `
+            <div class="subsection">
+                <div class="subsection-title">📍 Яндекс Карты</div>
+                ${linkTypes.yandex.map(l => `
+                <a href="${l.url}" target="_blank" class="link-item">
+                    <div class="link-icon yandex">📍</div>
+                    <div class="link-info">
+                        <div class="link-title">${l.title}</div>
+                        <div class="link-url">${this.getDomain(l.url)}</div>
+                    </div>
+                </a>
+                `).join('')}
+            </div>
+            ` : ''}
+            
+            ${linkTypes.instagram.length > 0 ? `
+            <div class="subsection">
+                <div class="subsection-title">📸 Instagram</div>
+                ${linkTypes.instagram.map(l => `
+                <a href="${l.url}" target="_blank" class="link-item">
+                    <div class="link-icon instagram">📸</div>
+                    <div class="link-info">
+                        <div class="link-title">${l.title}</div>
+                        <div class="link-url">${this.getDomain(l.url)}</div>
+                    </div>
+                </a>
+                `).join('')}
+            </div>
+            ` : ''}
+            
+            ${linkTypes.web.length > 0 ? `
+            <div class="subsection">
+                <div class="subsection-title">🌐 Сайты</div>
+                ${linkTypes.web.map(l => `
+                <a href="${l.url}" target="_blank" class="link-item">
+                    <div class="link-icon web">🌐</div>
+                    <div class="link-info">
+                        <div class="link-title">${l.title}</div>
+                        <div class="link-url">${this.getDomain(l.url)}</div>
+                    </div>
+                </a>
+                `).join('')}
+            </div>
+            ` : ''}
+        </div>
+        ` : ''}
+        
+        ${notes.length > 0 ? `
+        <div class="section">
+            <div class="section-title">📝 Заметки</div>
+            ${notes.map(n => `
+            <div class="note-item">
+                <div class="note-title">${n.title}</div>
+                <div class="note-text">${n.text}</div>
+            </div>
+            `).join('')}
+        </div>
+        ` : ''}
+        
+        ${photos.length > 0 ? `
+        <div class="section">
+            <div class="section-title">📷 Фотографии</div>
+            <div class="photo-grid">
+                ${photos.map(p => `<img src="${p.data}" class="photo-item" alt="Фото">`).join('')}
+            </div>
+        </div>
+        ` : ''}
+        
+        <div class="footer">
+            Создано в Trip Planner • ${new Date().toLocaleDateString('ru-RU')}
+        </div>
+    </div>
+</body>
+</html>`;
+        
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${trip.title.replace(/\s+/g, '_')}.html`;
+        a.click();
+        
+        URL.revokeObjectURL(url);
+        this.showToast('🌐 HTML экспортирован!', 'success');
+    }
+    
     async exportTrip() {
         const trip = this.currentTrip;
         const tripId = trip.id;
@@ -2008,6 +2728,501 @@ class TripPlannerApp {
         URL.revokeObjectURL(url);
         this.closeModal();
         this.showToast('📤 Поездка экспортирована', 'success');
+    }
+    
+    async exportTripHTML() {
+        const trip = this.currentTrip;
+        const tripId = trip.id;
+        
+        const events = await this.dbGetAll('events', 'tripId', tripId);
+        const links = await this.dbGetAll('links', 'tripId', tripId);
+        const notes = await this.dbGetAll('notes', 'tripId', tripId);
+        const photos = await this.dbGetAll('photos', 'tripId', tripId);
+        
+        // Группируем события по датам
+        const groupedEvents = {};
+        events.forEach(e => {
+            if (!groupedEvents[e.date]) groupedEvents[e.date] = [];
+            groupedEvents[e.date].push(e);
+        });
+        const sortedDates = Object.keys(groupedEvents).sort();
+        
+        // Группируем ссылки по типам
+        const linksByType = {
+            map: links.filter(l => l.type === 'map'),
+            yandex: links.filter(l => l.type === 'yandex'),
+            instagram: links.filter(l => l.type === 'instagram'),
+            web: links.filter(l => l.type === 'web')
+        };
+        
+        // Генерируем HTML
+        const html = `<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${trip.title} — Trip Planner</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --bg: #f2f2f7;
+            --card: #ffffff;
+            --text: #1d1d1f;
+            --text-secondary: #8e8e93;
+            --accent: #007aff;
+            --border: #e5e5ea;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            padding-bottom: 40px;
+        }
+        
+        .hero {
+            background: ${trip.cover ? `url('${trip.cover}') center/cover` : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'};
+            min-height: 220px;
+            display: flex;
+            align-items: flex-end;
+            padding: 20px;
+            position: relative;
+        }
+        
+        .hero::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(transparent 40%, rgba(0,0,0,0.7));
+        }
+        
+        .hero-content {
+            position: relative;
+            color: white;
+            width: 100%;
+        }
+        
+        .hero-title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        
+        .hero-dates {
+            font-size: 16px;
+            opacity: 0.95;
+        }
+        
+        .hero-emoji {
+            font-size: 64px;
+            text-align: center;
+            margin-bottom: 20px;
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 16px;
+        }
+        
+        .section {
+            margin-bottom: 24px;
+        }
+        
+        .section-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .card {
+            background: var(--card);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            margin-bottom: 12px;
+        }
+        
+        .day-header {
+            display: flex;
+            align-items: center;
+            padding: 16px;
+            background: linear-gradient(135deg, #007aff, #5856d6);
+            color: white;
+        }
+        
+        .day-date {
+            width: 50px;
+            height: 50px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin-right: 14px;
+        }
+        
+        .day-num {
+            font-size: 22px;
+            font-weight: 700;
+            line-height: 1;
+        }
+        
+        .day-month {
+            font-size: 11px;
+            text-transform: uppercase;
+            opacity: 0.9;
+        }
+        
+        .day-info .weekday {
+            font-size: 17px;
+            font-weight: 600;
+        }
+        
+        .day-info .full-date {
+            font-size: 13px;
+            opacity: 0.9;
+        }
+        
+        .event {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 12px;
+        }
+        
+        .event:last-child {
+            border-bottom: none;
+        }
+        
+        .event-time {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--accent);
+            min-width: 50px;
+        }
+        
+        .event-content {
+            flex: 1;
+        }
+        
+        .event-title {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        
+        .event-note {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        
+        .event-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 8px;
+            padding: 6px 12px;
+            background: var(--bg);
+            border-radius: 8px;
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .event-link:active {
+            opacity: 0.7;
+        }
+        
+        .event-photo {
+            width: 100%;
+            max-width: 300px;
+            border-radius: 12px;
+            margin-top: 10px;
+        }
+        
+        .link-item {
+            display: flex;
+            align-items: center;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+            text-decoration: none;
+            color: inherit;
+            transition: background 0.15s;
+        }
+        
+        .link-item:last-child {
+            border-bottom: none;
+        }
+        
+        .link-item:active {
+            background: var(--bg);
+        }
+        
+        .link-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            margin-right: 12px;
+        }
+        
+        .link-icon.map { background: #e8f5e9; }
+        .link-icon.yandex { background: #fff3e0; }
+        .link-icon.instagram { background: #fce4ec; }
+        .link-icon.web { background: #e3f2fd; }
+        
+        .link-info {
+            flex: 1;
+        }
+        
+        .link-title {
+            font-size: 16px;
+            font-weight: 500;
+        }
+        
+        .link-url {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        
+        .link-arrow {
+            color: var(--text-secondary);
+            font-size: 18px;
+        }
+        
+        .note-card {
+            padding: 16px;
+        }
+        
+        .note-title {
+            font-size: 17px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .note-text {
+            font-size: 15px;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+        }
+        
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px;
+        }
+        
+        .photo-item {
+            aspect-ratio: 1;
+            object-fit: cover;
+            border-radius: 8px;
+            width: 100%;
+        }
+        
+        .subsection {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin: 20px 0 10px 4px;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 30px 20px;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+        
+        .footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        
+        .description {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 20px;
+            font-size: 15px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        ${!trip.cover ? `<div class="hero-content" style="text-align: center; padding-bottom: 20px;"><div class="hero-emoji">${this.getTripEmoji(trip.title)}</div></div>` : ''}
+        <div class="hero-content">
+            <h1 class="hero-title">${trip.title}</h1>
+            <div class="hero-dates">${this.formatDateRange(trip.startDate, trip.endDate)}</div>
+        </div>
+    </div>
+    
+    <div class="container">
+        ${trip.description ? `<div class="description">${trip.description}</div>` : ''}
+        
+        ${events.length > 0 ? `
+        <div class="section">
+            <h2 class="section-title">📅 Расписание</h2>
+            ${sortedDates.map(date => {
+                const dateObj = new Date(date);
+                const dayEvents = groupedEvents[date].sort((a, b) => a.time.localeCompare(b.time));
+                return `
+                <div class="card">
+                    <div class="day-header">
+                        <div class="day-date">
+                            <span class="day-num">${dateObj.getDate()}</span>
+                            <span class="day-month">${this.getMonthShort(dateObj.getMonth())}</span>
+                        </div>
+                        <div class="day-info">
+                            <div class="weekday">${this.getWeekday(dateObj)}</div>
+                            <div class="full-date">${this.formatDate(date)}</div>
+                        </div>
+                    </div>
+                    ${dayEvents.map(e => `
+                    <div class="event">
+                        <span class="event-time">${e.time}</span>
+                        <div class="event-content">
+                            <div class="event-title">${e.title}</div>
+                            ${e.note ? `<div class="event-note">${e.note}</div>` : ''}
+                            ${e.link ? `<a href="${e.link}" target="_blank" class="event-link">${e.link.includes('yandex') ? '📍' : '🗺️'} Открыть карту</a>` : ''}
+                            ${e.photo ? `<img src="${e.photo}" class="event-photo" alt="">` : ''}
+                        </div>
+                    </div>
+                    `).join('')}
+                </div>
+                `;
+            }).join('')}
+        </div>
+        ` : ''}
+        
+        ${links.length > 0 ? `
+        <div class="section">
+            <h2 class="section-title">🔗 Полезные ссылки</h2>
+            
+            ${linksByType.map.length > 0 ? `
+            <div class="subsection">🗺️ Google Maps</div>
+            <div class="card">
+                ${linksByType.map.map(l => `
+                <a href="${l.url}" target="_blank" class="link-item">
+                    <div class="link-icon map">🗺️</div>
+                    <div class="link-info">
+                        <div class="link-title">${l.title}</div>
+                        <div class="link-url">${this.getDomain(l.url)}</div>
+                    </div>
+                    <span class="link-arrow">›</span>
+                </a>
+                `).join('')}
+            </div>
+            ` : ''}
+            
+            ${linksByType.yandex.length > 0 ? `
+            <div class="subsection">📍 Яндекс Карты</div>
+            <div class="card">
+                ${linksByType.yandex.map(l => `
+                <a href="${l.url}" target="_blank" class="link-item">
+                    <div class="link-icon yandex">📍</div>
+                    <div class="link-info">
+                        <div class="link-title">${l.title}</div>
+                        <div class="link-url">${this.getDomain(l.url)}</div>
+                    </div>
+                    <span class="link-arrow">›</span>
+                </a>
+                `).join('')}
+            </div>
+            ` : ''}
+            
+            ${linksByType.instagram.length > 0 ? `
+            <div class="subsection">📸 Instagram</div>
+            <div class="card">
+                ${linksByType.instagram.map(l => `
+                <a href="${l.url}" target="_blank" class="link-item">
+                    <div class="link-icon instagram">📸</div>
+                    <div class="link-info">
+                        <div class="link-title">${l.title}</div>
+                        <div class="link-url">${this.getDomain(l.url)}</div>
+                    </div>
+                    <span class="link-arrow">›</span>
+                </a>
+                `).join('')}
+            </div>
+            ` : ''}
+            
+            ${linksByType.web.length > 0 ? `
+            <div class="subsection">🌐 Сайты</div>
+            <div class="card">
+                ${linksByType.web.map(l => `
+                <a href="${l.url}" target="_blank" class="link-item">
+                    <div class="link-icon web">🌐</div>
+                    <div class="link-info">
+                        <div class="link-title">${l.title}</div>
+                        <div class="link-url">${this.getDomain(l.url)}</div>
+                    </div>
+                    <span class="link-arrow">›</span>
+                </a>
+                `).join('')}
+            </div>
+            ` : ''}
+        </div>
+        ` : ''}
+        
+        ${notes.length > 0 ? `
+        <div class="section">
+            <h2 class="section-title">📝 Заметки</h2>
+            ${notes.map(n => `
+            <div class="card note-card">
+                <div class="note-title">${n.title}</div>
+                <div class="note-text">${n.text}</div>
+            </div>
+            `).join('')}
+        </div>
+        ` : ''}
+        
+        ${photos.length > 0 ? `
+        <div class="section">
+            <h2 class="section-title">📷 Фотографии</h2>
+            <div class="card" style="padding: 8px;">
+                <div class="photo-grid">
+                    ${photos.map(p => `<img src="${p.data}" class="photo-item" alt="">`).join('')}
+                </div>
+            </div>
+        </div>
+        ` : ''}
+        
+        <div class="footer">
+            Создано в <a href="#">Trip Planner</a><br>
+            ${new Date().toLocaleDateString('ru-RU')}
+        </div>
+    </div>
+</body>
+</html>`;
+        
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${trip.title.replace(/\s+/g, '_')}.html`;
+        a.click();
+        
+        URL.revokeObjectURL(url);
+        this.closeModal();
+        this.showToast('🌐 HTML-страница создана!', 'success');
     }
     
     async exportAllData() {
@@ -2038,6 +3253,564 @@ class TripPlannerApp {
         
         URL.revokeObjectURL(url);
         this.showToast('📤 Все данные экспортированы', 'success');
+    }
+    
+    async exportTripHTML() {
+        const trip = this.currentTrip;
+        const tripId = trip.id;
+        
+        const events = await this.dbGetAll('events', 'tripId', tripId);
+        const links = await this.dbGetAll('links', 'tripId', tripId);
+        const notes = await this.dbGetAll('notes', 'tripId', tripId);
+        const photos = await this.dbGetAll('photos', 'tripId', tripId);
+        
+        // Группировка событий по датам
+        const groupedEvents = {};
+        events.forEach(e => {
+            if (!groupedEvents[e.date]) groupedEvents[e.date] = [];
+            groupedEvents[e.date].push(e);
+        });
+        const sortedDates = Object.keys(groupedEvents).sort();
+        
+        // Группировка ссылок по типу
+        const groupedLinks = {
+            map: links.filter(l => l.type === 'map'),
+            yandex: links.filter(l => l.type === 'yandex'),
+            instagram: links.filter(l => l.type === 'instagram'),
+            web: links.filter(l => l.type === 'web')
+        };
+        
+        // Генерация HTML
+        const html = `<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${trip.title}</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --bg: #f2f2f7;
+            --card: #ffffff;
+            --text: #1d1d1f;
+            --text-secondary: #8e8e93;
+            --accent: #007aff;
+            --border: #e5e5ea;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: var(--text);
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        /* Header */
+        .hero {
+            background: var(--card);
+            border-radius: 20px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        
+        .hero-image {
+            width: 100%;
+            height: 200px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 80px;
+        }
+        
+        .hero-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .hero-content {
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .hero-title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        
+        .hero-dates {
+            font-size: 16px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+        
+        .hero-desc {
+            font-size: 15px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+        
+        /* Sections */
+        .section {
+            background: var(--card);
+            border-radius: 16px;
+            margin-bottom: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        
+        .section-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 20px;
+            font-size: 18px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .section-content {
+            padding: 16px;
+        }
+        
+        /* Day */
+        .day {
+            margin-bottom: 20px;
+        }
+        
+        .day:last-child {
+            margin-bottom: 0;
+        }
+        
+        .day-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .day-badge {
+            width: 50px;
+            height: 50px;
+            background: var(--accent);
+            color: white;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        
+        .day-badge-num {
+            font-size: 20px;
+            font-weight: 700;
+            line-height: 1;
+        }
+        
+        .day-badge-month {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .day-title {
+            font-size: 17px;
+            font-weight: 600;
+        }
+        
+        .day-subtitle {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        
+        /* Event */
+        .event {
+            background: var(--bg);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 10px;
+        }
+        
+        .event:last-child {
+            margin-bottom: 0;
+        }
+        
+        .event-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        
+        .event-time {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent);
+            min-width: 50px;
+        }
+        
+        .event-content {
+            flex: 1;
+        }
+        
+        .event-title {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        
+        .event-note {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        
+        .event-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--accent);
+            color: white;
+            padding: 8px 14px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            margin-top: 8px;
+        }
+        
+        .event-link:hover {
+            opacity: 0.9;
+        }
+        
+        .event-photo {
+            width: 100%;
+            border-radius: 10px;
+            margin-top: 12px;
+        }
+        
+        /* Links */
+        .link-group {
+            margin-bottom: 16px;
+        }
+        
+        .link-group:last-child {
+            margin-bottom: 0;
+        }
+        
+        .link-group-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            padding-left: 4px;
+        }
+        
+        .link-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            background: var(--bg);
+            border-radius: 10px;
+            margin-bottom: 8px;
+            text-decoration: none;
+            color: var(--text);
+            transition: transform 0.2s;
+        }
+        
+        .link-item:hover {
+            transform: scale(1.02);
+        }
+        
+        .link-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .link-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+        
+        .link-icon.map { background: #e8f5e9; }
+        .link-icon.yandex { background: #fff3e0; }
+        .link-icon.instagram { background: #fce4ec; }
+        .link-icon.web { background: #e3f2fd; }
+        
+        .link-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .link-title {
+            font-size: 15px;
+            font-weight: 500;
+        }
+        
+        .link-url {
+            font-size: 12px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .link-arrow {
+            color: var(--text-secondary);
+            font-size: 18px;
+        }
+        
+        /* Notes */
+        .note {
+            background: var(--bg);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        
+        .note:last-child {
+            margin-bottom: 0;
+        }
+        
+        .note-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .note-text {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+        
+        /* Photos */
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px;
+        }
+        
+        .photo-item {
+            aspect-ratio: 1;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .photo-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: rgba(255,255,255,0.7);
+            font-size: 13px;
+        }
+        
+        .footer a {
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Hero -->
+        <div class="hero">
+            <div class="hero-image">
+                ${trip.cover ? `<img src="${trip.cover}" alt="${trip.title}">` : '✈️'}
+            </div>
+            <div class="hero-content">
+                <h1 class="hero-title">${trip.title}</h1>
+                <div class="hero-dates">${this.formatDateRange(trip.startDate, trip.endDate)}</div>
+                ${trip.description ? `<p class="hero-desc">${trip.description}</p>` : ''}
+            </div>
+        </div>
+        
+        ${sortedDates.length > 0 ? `
+        <!-- Schedule -->
+        <div class="section">
+            <div class="section-header">📅 Расписание</div>
+            <div class="section-content">
+                ${sortedDates.map(date => {
+                    const dayEvents = groupedEvents[date].sort((a, b) => a.time.localeCompare(b.time));
+                    const d = new Date(date);
+                    const weekdays = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
+                    const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+                    
+                    return `
+                        <div class="day">
+                            <div class="day-header">
+                                <div class="day-badge">
+                                    <span class="day-badge-num">${d.getDate()}</span>
+                                    <span class="day-badge-month">${months[d.getMonth()]}</span>
+                                </div>
+                                <div>
+                                    <div class="day-title">${weekdays[d.getDay()]}</div>
+                                    <div class="day-subtitle">${d.toLocaleDateString('ru-RU')}</div>
+                                </div>
+                            </div>
+                            ${dayEvents.map(e => `
+                                <div class="event">
+                                    <div class="event-header">
+                                        <span class="event-time">${e.time}</span>
+                                        <div class="event-content">
+                                            <div class="event-title">${e.title}</div>
+                                            ${e.note ? `<div class="event-note">${e.note}</div>` : ''}
+                                            ${e.link ? `<a href="${e.link}" target="_blank" class="event-link">${e.link.includes('yandex') ? '📍 Яндекс Карты' : e.link.includes('google') || e.link.includes('goo.gl') ? '🗺️ Google Maps' : '🔗 Открыть ссылку'}</a>` : ''}
+                                        </div>
+                                    </div>
+                                    ${e.photo ? `<img src="${e.photo}" class="event-photo" alt="">` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+        ` : ''}
+        
+        ${links.length > 0 ? `
+        <!-- Links -->
+        <div class="section">
+            <div class="section-header">🔗 Полезные ссылки</div>
+            <div class="section-content">
+                ${groupedLinks.map.length > 0 ? `
+                    <div class="link-group">
+                        <div class="link-group-title">🗺️ Google Maps</div>
+                        ${groupedLinks.map.map(l => `
+                            <a href="${l.url}" target="_blank" class="link-item">
+                                <div class="link-icon map">🗺️</div>
+                                <div class="link-info">
+                                    <div class="link-title">${l.title}</div>
+                                    <div class="link-url">${l.url}</div>
+                                </div>
+                                <span class="link-arrow">›</span>
+                            </a>
+                        `).join('')}
+                    </div>
+                ` : ''}
+                ${groupedLinks.yandex.length > 0 ? `
+                    <div class="link-group">
+                        <div class="link-group-title">📍 Яндекс Карты</div>
+                        ${groupedLinks.yandex.map(l => `
+                            <a href="${l.url}" target="_blank" class="link-item">
+                                <div class="link-icon yandex">📍</div>
+                                <div class="link-info">
+                                    <div class="link-title">${l.title}</div>
+                                    <div class="link-url">${l.url}</div>
+                                </div>
+                                <span class="link-arrow">›</span>
+                            </a>
+                        `).join('')}
+                    </div>
+                ` : ''}
+                ${groupedLinks.instagram.length > 0 ? `
+                    <div class="link-group">
+                        <div class="link-group-title">📸 Instagram</div>
+                        ${groupedLinks.instagram.map(l => `
+                            <a href="${l.url}" target="_blank" class="link-item">
+                                <div class="link-icon instagram">📸</div>
+                                <div class="link-info">
+                                    <div class="link-title">${l.title}</div>
+                                    <div class="link-url">${l.url}</div>
+                                </div>
+                                <span class="link-arrow">›</span>
+                            </a>
+                        `).join('')}
+                    </div>
+                ` : ''}
+                ${groupedLinks.web.length > 0 ? `
+                    <div class="link-group">
+                        <div class="link-group-title">🌐 Сайты</div>
+                        ${groupedLinks.web.map(l => `
+                            <a href="${l.url}" target="_blank" class="link-item">
+                                <div class="link-icon web">🌐</div>
+                                <div class="link-info">
+                                    <div class="link-title">${l.title}</div>
+                                    <div class="link-url">${l.url}</div>
+                                </div>
+                                <span class="link-arrow">›</span>
+                            </a>
+                        `).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+        ` : ''}
+        
+        ${notes.length > 0 ? `
+        <!-- Notes -->
+        <div class="section">
+            <div class="section-header">📝 Заметки</div>
+            <div class="section-content">
+                ${notes.map(n => `
+                    <div class="note">
+                        <div class="note-title">${n.title}</div>
+                        <div class="note-text">${n.text}</div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+        ` : ''}
+        
+        ${photos.length > 0 ? `
+        <!-- Photos -->
+        <div class="section">
+            <div class="section-header">📷 Фотографии</div>
+            <div class="section-content">
+                <div class="photo-grid">
+                    ${photos.map(p => `
+                        <div class="photo-item">
+                            <img src="${p.data}" alt="">
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+        ` : ''}
+        
+        <div class="footer">
+            Создано в Trip Planner • ${new Date().toLocaleDateString('ru-RU')}
+        </div>
+    </div>
+</body>
+</html>`;
+        
+        const blob = new Blob([html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${trip.title.replace(/\s+/g, '_')}.html`;
+        a.click();
+        
+        URL.revokeObjectURL(url);
+        this.closeModal();
+        this.showToast('🌐 HTML экспортирован', 'success');
     }
     
     importData() {
