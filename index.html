@@ -2395,6 +2395,9 @@ class TripPlannerApp {
             if (linkTypes[l.type]) linkTypes[l.type].push(l);
         });
         
+        // Экранирование закрывающего тега script
+        const scriptClose = '<' + '/script>';
+        
         // Генерация HTML
         const html = `<!DOCTYPE html>
 <html lang="ru">
@@ -2837,7 +2840,7 @@ class TripPlannerApp {
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') closeLightbox();
         });
-    </script>
+    ${scriptClose}
 </body>
 </html>`;
         
